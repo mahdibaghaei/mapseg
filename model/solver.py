@@ -58,7 +58,7 @@ class mae_trainer(nn.Module):
     #kjjjiijijjjp
     def get_model(self):
     """Get actual model, handling DataParallel wrapper"""
-    return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
+        return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
 
 
     def _get_epoch(self):
