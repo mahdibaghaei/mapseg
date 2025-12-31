@@ -1,0 +1,38 @@
+system:
+  project: 'MAPSeg'
+  exp_name: 'Kaggle_T4_MAE'
+  wandb: False  # Disable if not using wandb
+  n_threads: 4  # Kaggle has 4 CPU cores
+  seed: 0
+  ckpt_dir: './checkpoints'  # Kaggle working directory
+
+train:
+  type: 'mae'  # Start with MAE pretraining
+  lr: 2e-4
+  batch_size: 8  # Increase from 4 → 8 for T4 x2
+  niter: 300  # MAE needs 300+ epochs minimum
+  niter_decay: 0
+  mask_ratio: 0.7
+  cls_num: 8
+  
+  # CRITICAL: Checkpoint settings
+  print_freq: 50  # Print every 50 iterations (see progress more often)
+  save_epoch_freq: 10  # Save every 10 epochs (Kaggle sessions are 9-12 hours)
+  
+  # Optimizer settings
+  optimizer: 'AdamW'
+  weight_decay: 0.05
+  betas: [0.9, 0.95]
+
+data:
+  patch_size: [96, 96, 96]  # Good for T4's 16GB memory
+  aug: True
+  aug_prob: 0.35
+  mae_root: '/kaggle/working/mmwh-heart/mae_data'  # Your dataset path
+  
+model:
+  depth: 8
+  embed_dim: 512
+  load_pretrain: False  # Set True when resuming
+  pretrain_model: None
+  large_scale: True  # Set True if >500 scans
