@@ -76,6 +76,12 @@ if __name__ == '__main__':
     '''
     cudnn.benchmark = True
     train_solver = get_solver(cfg)
+    
+    if torch.cuda.device_count() > 1:
+    print(f"Using {torch.cuda.device_count()} GPUs!")
+    train_solver.model = torch.nn.DataParallel(train_solver.model)
+    # Adjust batch size for multi-GPU
+    print(f"Effective batch size: {cfg.train.batch_size * torch.cuda.device_count()}")
 
     # To detect if there is existing checkpoint
     if os.path.exists(os.path.join(ckpt_fld, 'solver_latest.pth')):
