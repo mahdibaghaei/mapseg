@@ -55,6 +55,12 @@ class mae_trainer(nn.Module):
         self.local_loss = []
         self.global_loss = []
 
+    #kjjjiijijjjp
+    def get_model(self):
+    """Get actual model, handling DataParallel wrapper"""
+    return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
+
+
     def _get_epoch(self):
         return len(self.local_loss)
 
@@ -71,8 +77,9 @@ class mae_trainer(nn.Module):
 
     def train_step(self, data, epoch):
         self.model.train()
+        model = self.get_model()  # ADD THIS LINE
         local_loss, global_loss, local_pred, global_pred, local_mask, global_mask = \
-            self.model.forward_train(
+            model.forward_train(
                 data['local_patch'].float().cuda(), data['global_images'].float().cuda())
         self.loss_dict = dict(zip(['local_MSE', 'global_MSE', ],
                                   [local_loss.item(), global_loss.item()]))
