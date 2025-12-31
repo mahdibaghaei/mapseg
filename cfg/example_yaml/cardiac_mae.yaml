@@ -1,0 +1,19 @@
+system:
+  project: PROJ
+  exp_name: Cardiac_MAE
+  n_threads: 8
+  ckpt_dir: './mae_ckpt'
+  seed: 0
+  wandb: False
+
+train: 
+  niter: 200
+  niter_decay: 100
+  type: 'mae'
+
+data: 
+  mae_root: './dataset_mae'
+  val_img: './dataset_mae/src_1_test'
+  val_label: './dataset_mae/src_1_test'
+  extension: '.nii'
+
