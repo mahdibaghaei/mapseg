@@ -13,6 +13,7 @@ from collections import OrderedDict
 import torchio as tio
 import nibabel as nib
 import random
+
 model_zoo = {
     'mae': MAE_CNN,
     'mpl': EMA_MPL
@@ -55,14 +56,9 @@ class mae_trainer(nn.Module):
         self.local_loss = []
         self.global_loss = []
 
-    #kjjjiijijjjp
     def get_model(self):
-        return self.model.module
-        if:
-        isinstance(self.model, torch.nn.DataParallel)
-        else:
-        self.model
-
+        """Get actual model, handling DataParallel wrapper"""
+        return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
 
     def _get_epoch(self):
         return len(self.local_loss)
@@ -80,7 +76,7 @@ class mae_trainer(nn.Module):
 
     def train_step(self, data, epoch):
         self.model.train()
-        model = self.get_model()  # ADD THIS LINE
+        model = self.get_model()
         local_loss, global_loss, local_pred, global_pred, local_mask, global_mask = \
             model.forward_train(
                 data['local_patch'].float().cuda(), data['global_images'].float().cuda())
@@ -278,7 +274,7 @@ class mpl_trainer(nn.Module):
                     pseudo_label_global_logit)
                 del pseudo_label_loc_logit, pseudo_label_global_logit
 
-            # train on pseudo dataset
+                # train on pseudo dataset
                 pse_seg_loss, pse_seg_pred, pse_seg_loss_aux, pse_seg_pred_aux, pse_seg_mask, pse_cos_feat = \
                     self.model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
                                             self.cfg.train.mask_ratio)
@@ -304,15 +300,15 @@ class mpl_trainer(nn.Module):
                 loss.backward()
                 self.optimizer.step()
                 self.visual_dict = dict(zip(['src_local', 'src_global', 'src_local_label', 'src_global_label',
-                                            'src_local_pred', 'src_local_pred_masked', 'src_global_pred',
+                                             'src_local_pred', 'src_local_pred_masked', 'src_global_pred',
                                              'src_masked_map', 'tgt_local', 'tgt_global', 'tgt_local_pse_label', 'tgt_global_pse_label',
                                              'tgt_local_pred', 'tgt_global_pred',
                                              'tgt_masked_map'],
                                             [img_src.detach(), global_src.detach(), label_src.detach(), label_src_aux.detach(),
-                                            pred_seg.detach(), pred_seg_masked.detach(), pred_aux.detach(),
-                                            mask_seg.detach(), img_tgt.detach(), global_tgt.detach(
+                                             pred_seg.detach(), pred_seg_masked.detach(), pred_aux.detach(),
+                                             mask_seg.detach(), img_tgt.detach(), global_tgt.detach(
                                             ), pseudo_label_loc.detach(), pseudo_label_global.detach(),
-                    pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
+                                             pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
             else:
                 pseudo_label_loc_logit, pseudo_label_global_logit = self.model.get_pseudo_label(
                     img_tgt, global_tgt, cord_tgt)
@@ -356,7 +352,7 @@ class mpl_trainer(nn.Module):
                                              'tgt_masked_map'],
                                             [img_tgt.detach(), global_tgt.detach(
                                             ), pseudo_label_loc.detach(), pseudo_label_global.detach(),
-                    pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
+                                             pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
 
     def get_cur_loss(self):
         return self.loss_dict
@@ -422,9 +418,9 @@ class mpl_trainer(nn.Module):
         tmp_norm = np.zeros((self.cfg.train.cls_num,) + tmp_scans.shape)
 
         scan_patches, _, tmp_idx = util.patch_slicer(tmp_scans, tmp_scans, self.cfg.data.patch_size,
-                                                     (x - 16, y -
-                                                      16, z - 16),
-                                                     remove_bg=self.cfg.data.remove_bg, test=True, ori_path=None)
+                                                      (x - 16, y -
+                                                       16, z - 16),
+                                                      remove_bg=self.cfg.data.remove_bg, test=True, ori_path=None)
         bound = util.get_bounds(torch.from_numpy(tmp_scans))
         global_scan = torch.unsqueeze(torch.from_numpy(
             tmp_scans).to(dtype=torch.float), dim=0)
