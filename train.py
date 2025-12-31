@@ -14,12 +14,6 @@ from model.utils.util import gen_code_archive
 import torch.backends.cudnn as cudnn
 import random
 
-# import os
-# os.environ["WANDB_MODE"] = "offline"
-# os.environ["WANDB_SILENT"] = "true"
-#
-# import wandb
-# wandb.init(mode="disabled")  # یا mode="offline" برای حالت آفلاین
 
 def set_random_seed(seed):
     """Set random seed.
@@ -78,10 +72,10 @@ if __name__ == '__main__':
     train_solver = get_solver(cfg)
     
     if torch.cuda.device_count() > 1:
-    print(f"Using {torch.cuda.device_count()} GPUs!")
-    train_solver.model = torch.nn.DataParallel(train_solver.model)
-    # Adjust batch size for multi-GPU
-    print(f"Effective batch size: {cfg.train.batch_size * torch.cuda.device_count()}")
+        print(f"Using {torch.cuda.device_count()} GPUs!")
+        train_solver.model = torch.nn.DataParallel(train_solver.model)
+        # Adjust batch size for multi-GPU
+        print(f"Effective batch size: {cfg.train.batch_size * torch.cuda.device_count()}")
 
     # To detect if there is existing checkpoint
     if os.path.exists(os.path.join(ckpt_fld, 'solver_latest.pth')):
