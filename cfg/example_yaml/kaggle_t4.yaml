@@ -39,9 +39,7 @@ data:
   remove_bg: True
   aug: True
   aug_prob: 0.3
-  mae_root: '/kaggle/input/your-dataset/mae_data'
-  val_img: '/kaggle/input/your-dataset/val/images'
-  val_label: '/kaggle/input/your-dataset/val/labels'
+  mae_root: '/kaggle/working/mmwh-heart/mae_data'
 
 model:
   depth: 6  # REDUCED: Smaller model
