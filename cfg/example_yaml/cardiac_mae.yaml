@@ -1,7 +1,7 @@
 system:
   project: PROJ
   exp_name: Cardiac_MAE
-  n_threads: 8
+  n_threads: 0
   save_nii : False
   ckpt_dir: './mae_ckpt'
   seed: 0
