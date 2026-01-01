@@ -15,9 +15,7 @@ train:
   save_epoch_freq : 5
 
 data: 
-  mae_root: './dataset_mae'
-  val_img: './dataset_mae/src_1_test'
-  val_label: './dataset_mae/src_1_test'
+  mae_root: '/kaggle/working/mmwh-heart/mae_data'
   extension: '.nii'
   patch_size: [112, 112, 112]
 
