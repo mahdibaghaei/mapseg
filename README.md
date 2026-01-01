@@ -54,5 +54,11 @@ If you found our work helpful, please cite our work:
     title     = {MAPSeg: Unified Unsupervised Domain Adaptation for Heterogeneous Medical Image Segmentation Based on 3D Masked Autoencoding and Pseudo-Labeling},
     booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
     month     = {June},
+
+
+
+
+
+    https://drive.google.com/file/d/135Eba8yPKWEaZdPq1DrFc03eLfEtllSC/view
     year      = {2024},
     pages     = {5851-5862}}
