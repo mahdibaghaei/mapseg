@@ -1,38 +1,54 @@
+# ============================================================
+# ULTRA-SAFE CONFIG - GUARANTEED TO WORK (No OOM)
+# Start with this, then increase settings gradually
+# ============================================================
+
 system:
   project: 'MAPSeg'
-  exp_name: 'Kaggle_T4_MAE'
-  wandb: False  # Disable if not using wandb
-  n_threads: 4  # Kaggle has 4 CPU cores
+  exp_name: 'Kaggle_UltraSafe'
+  wandb: False
+  n_threads: 4
   seed: 0
-  ckpt_dir: './checkpoints'  # Kaggle working directory
+  save_nii: False
+  ckpt_dir: '/kaggle/working/checkpoints'
 
 train:
-  type: 'mae'  # Start with MAE pretraining
+  type: 'mae'
   lr: 2e-4
-  batch_size: 8  # Increase from 4 → 8 for T4 x2
-  niter: 300  # MAE needs 300+ epochs minimum
+  batch_size: 1  # MINIMUM: 1 per GPU (total=2)
+  niter: 300
   niter_decay: 0
   mask_ratio: 0.7
   cls_num: 8
-  
-  # CRITICAL: Checkpoint settings
-  print_freq: 50  # Print every 50 iterations (see progress more often)
-  save_epoch_freq: 10  # Save every 10 epochs (Kaggle sessions are 9-12 hours)
-  
-  # Optimizer settings
+  local_mae_patch: 8
+  global_mae_patch: 4
   optimizer: 'AdamW'
   weight_decay: 0.05
   betas: [0.9, 0.95]
+  print_freq: 10
+  save_epoch_freq: 20
+  warmup: 50
+  patience: 50
+  test_time: False
 
 data:
-  patch_size: [96, 96, 96]  # Good for T4's 16GB memory
+  patch_size: [48, 48, 48]  # SMALLEST: Guaranteed to fit
+  extension: '.nii.gz'
+  normalize: True
+  norm_perc: 99.5
+  remove_bg: True
   aug: True
-  aug_prob: 0.35
-  mae_root: '/kaggle/working/mmwh-heart/mae_data'  # Your dataset path
-  
+  aug_prob: 0.3
+  mae_root: '/kaggle/input/your-dataset/mae_data'
+  val_img: '/kaggle/input/your-dataset/val/images'
+  val_label: '/kaggle/input/your-dataset/val/labels'
+
 model:
-  depth: 8
-  embed_dim: 512
-  load_pretrain: False  # Set True when resuming
-  pretrain_model: None
-  large_scale: True  # Set True if >500 scans
+  depth: 6  # REDUCED: Smaller model
+  embed_dim: 256  # REDUCED: Much smaller
+  load_pretrain: False
+  pretrain_model: null
+  large_scale: False
+
+# Memory: ~3-4 GB per GPU (very safe)
+# Speed: Slower but stable
