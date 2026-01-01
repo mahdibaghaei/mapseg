@@ -13,7 +13,6 @@ from collections import OrderedDict
 import torchio as tio
 import nibabel as nib
 import random
-
 model_zoo = {
     'mae': MAE_CNN,
     'mpl': EMA_MPL
@@ -25,24 +24,24 @@ optim_zoo = {
     'AdamW': optim.AdamW,
 }
 
+
 class mae_trainer(nn.Module):
     '''
     Solver for MAE pretraining
-    There is no evaluation for MAE pretraining
+    There is no evaluation for MAE pretraining 
     There is also no inference for MAE solver
     '''
+
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         self.model = model_zoo[cfg.train.type](cfg)
         self.model.cuda()
-
         if self.cfg.model.pretrain_model is not None and self.cfg.model.load_pretrain:
             self.model.load_state_dict(torch.load(
                 self.cfg.model.pretrain_model), strict=False)
             print('model initialized with pretrained weights: ' +
                   self.cfg.model.pretrain_model)
-
         self.optimizer = optim_zoo[cfg.train.optimizer](
             self.model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay, betas=cfg.train.betas)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -55,10 +54,6 @@ class mae_trainer(nn.Module):
         # we keep track of loss/val score here
         self.local_loss = []
         self.global_loss = []
-
-    def get_model(self):
-        """Get actual model, handling DataParallel wrapper"""
-        return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
 
     def _get_epoch(self):
         return len(self.local_loss)
@@ -76,33 +71,19 @@ class mae_trainer(nn.Module):
 
     def train_step(self, data, epoch):
         self.model.train()
-
-        # Get actual model (handles DataParallel wrapper)
-        model = self.get_model()
-
-        # Move data to GPU
-        local_patch = data['local_patch'].float().cuda()
-        global_images = data['global_images'].float().cuda()
-
-        # Forward pass
         local_loss, global_loss, local_pred, global_pred, local_mask, global_mask = \
-            model.forward_train(local_patch, global_images)
-
-        self.loss_dict = dict(zip(['local_MSE', 'global_MSE'],
+            self.model.forward_train(
+                data['local_patch'].float().cuda(), data['global_images'].float().cuda())
+        self.loss_dict = dict(zip(['local_MSE', 'global_MSE', ],
                                   [local_loss.item(), global_loss.item()]))
-
         self.tmp_local_loss += local_loss.item()
         self.tmp_global_loss += global_loss.item()
-
         loss = local_loss + global_loss
-
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # Detach and store for visualization
-        self.visual_dict = dict(zip(['loca_patch', 'local_mask', 'local_pred', 
-                                     'global_scan', 'global_mask', 'global_pred'],
+        self.visual_dict = dict(zip(['loca_patch',  'local_mask', 'local_pred', 'global_scan', 'global_mask',  'global_pred'],
                                     [data['local_patch'],
                                      local_mask.detach(),
                                      local_pred.detach(),
@@ -110,9 +91,6 @@ class mae_trainer(nn.Module):
                                      global_mask.detach(),
                                      global_pred.detach()
                                      ]))
-
-        # Clear unnecessary variables to save memory
-        del local_patch, global_images, local_loss, global_loss, loss
 
     def get_cur_loss(self):
         return self.loss_dict
@@ -128,7 +106,6 @@ class mae_trainer(nn.Module):
         # save nifti first
         if self.cfg.system.save_nii:
             util.save_nii(self.visual_dict, self.vis_dir, epoch)
-
         # save images
         vis = OrderedDict()
         slc_num = self.cfg.data.patch_size[-1]//2
@@ -137,6 +114,7 @@ class mae_trainer(nn.Module):
                 vis[k] = util.tensor2label(v[0, :, :, :, slc_num], 2)
             else:
                 vis[k] = util.tensor2im(v[0, :, :, :, slc_num])
+
         self.visualizer.display_current_results(vis, epoch)
 
     def scheduler_step(self):
@@ -148,11 +126,12 @@ class mae_trainer(nn.Module):
 class mpl_trainer(nn.Module):
     '''
     Solver for Masked Pseudo Labeling
+
     '''
+
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-
         # get the EMA model
         self.model = model_zoo[cfg.train.type](cfg)
         self.model.cuda()
@@ -164,8 +143,8 @@ class mpl_trainer(nn.Module):
                 print('model initialized with pretrained segmentation weights (noMAE)')
             else:
                 self.model.initialize_load()
-
         self.is_teacher_init = False
+
         self.optimizer = optim_zoo[cfg.train.optimizer](
             self.model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay, betas=cfg.train.betas)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -177,7 +156,6 @@ class mpl_trainer(nn.Module):
         self.val_dir = os.path.join(
             cfg.system.ckpt_dir, cfg.system.project, cfg.system.exp_name, 'validation')
         util.mkdirs(self.val_dir)
-
         # we keep track of loss/val score here
         self.src_seg_loss = []
         self.src_seg_loss_masked = []
@@ -192,10 +170,6 @@ class mpl_trainer(nn.Module):
         self.val_dice = []
         self.cumulative_no_improve = []
         self.total_step = 0
-
-    def get_model(self):
-        """Get actual model, handling DataParallel wrapper"""
-        return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
 
     def _get_epoch(self):
         return len(self.src_seg_loss)
@@ -237,22 +211,11 @@ class mpl_trainer(nn.Module):
         }
 
     def train_step(self, data, epoch):
-        # Clear cache at the start to free up memory
         torch.cuda.empty_cache()
-
         self.total_step += 1
-
         if epoch > self.cfg.train.warmup:
-            # Get actual model for EMA update
-            model = self.get_model()
-            model._update_ema(self.total_step)
-
+            self.model._update_ema(self.total_step)
         self.model.train()
-
-        # Get actual model (handles DataParallel wrapper)
-        model = self.get_model()
-
-        # Move data to GPU
         img_src, global_src, label_src, label_src_aux, cord_src, img_tgt, global_tgt, cord_tgt = \
             data['imgB'].float().cuda(), \
             data['downB'].float().cuda(), \
@@ -262,32 +225,27 @@ class mpl_trainer(nn.Module):
             data['imgA'].float().cuda(), \
             data['downA'].float().cuda(), \
             data['cord_A']
-
         if epoch <= self.cfg.train.warmup:
             # L_sup: seg_loss = L_Seg()
-            # L_MPL: seg_loss_masked, pse_seg_loss...
+            # L_MPL: seg_loss_masked, pse_seg_loss
             # L_global: seg_loss_aux, seg_loss_aux_masked, cos_feat, cos_feat_masked, pse_seg_loss_aux, pse_cos_feat
             seg_loss, seg_loss_masked, seg_loss_aux, seg_loss_aux_masked, cos_feat, cos_feat_masked, pred_seg, pred_seg_masked, pred_aux, mask_seg = \
-                model.train_source(cord_src, img_src, label_src,
-                                   global_src, label_src_aux, self.cfg.train.mask_ratio)
-
+                self.model.train_source(cord_src, img_src, label_src,
+                                        global_src, label_src_aux, self.cfg.train.mask_ratio)
             self.loss_dict = dict(zip(['src_seg_loss', 'src_seg_loss_masked', 'src_seg_loss_aux', 'src_seg_loss_aux_masked', 'src_cos_reg', 'src_cos_reg_masked'],
                                       [seg_loss.item(), seg_loss_masked.item(), seg_loss_aux.item(), seg_loss_aux_masked.item(), cos_feat.item(), cos_feat_masked.item()]))
-
             self.tmp_src_seg_loss += seg_loss.item()
             self.tmp_src_seg_loss_masked += seg_loss_masked.item()
             self.tmp_src_seg_loss_aux += seg_loss_aux.item()
             self.tmp_src_seg_loss_aux_masked += seg_loss_aux_masked.item()
             self.tmp_src_cos_reg += cos_feat.item()
             self.tmp_src_cos_reg_masked += cos_feat_masked.item()
-
             loss = (seg_loss + seg_loss_masked) * 0.5 + (seg_loss_aux + seg_loss_aux_masked) * 0.5 * 0.1 + (
                 cos_feat + cos_feat_masked) * 0.5 * 0.05
 
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
             self.visual_dict = dict(zip(['src_local', 'src_global', 'src_local_label', 'src_global_label',
                                          'src_local_pred', 'src_local_pred_masked', 'src_global_pred',
                                          'src_masked_map'],
@@ -296,39 +254,32 @@ class mpl_trainer(nn.Module):
                                          mask_seg.detach()]))
         else:
             if not self.is_teacher_init:
-                model._init_ema_weights()
+                self.model._init_ema_weights()
                 self.is_teacher_init = True
-
             if not self.cfg.train.test_time:
                 seg_loss, seg_loss_masked, seg_loss_aux, seg_loss_aux_masked, cos_feat, cos_feat_masked, pred_seg, pred_seg_masked, pred_aux, mask_seg = \
-                    model.train_source(cord_src, img_src, label_src,
-                                       global_src, label_src_aux, self.cfg.train.mask_ratio)
-
-                pseudo_label_loc_logit, pseudo_label_global_logit = model.get_pseudo_label(
+                    self.model.train_source(cord_src, img_src, label_src,
+                                            global_src, label_src_aux, self.cfg.train.mask_ratio)
+                pseudo_label_loc_logit, pseudo_label_global_logit = self.model.get_pseudo_label(
                     img_tgt, global_tgt, cord_tgt)
-
-                pseudo_label_loc = model.get_pseudo_label_and_weight(
+                pseudo_label_loc = self.model.get_pseudo_label_and_weight(
                     pseudo_label_loc_logit)
-                pseudo_label_global = model.get_pseudo_label_and_weight(
+                pseudo_label_global = self.model.get_pseudo_label_and_weight(
                     pseudo_label_global_logit)
-
                 del pseudo_label_loc_logit, pseudo_label_global_logit
 
-                # train on pseudo dataset
+            # train on pseudo dataset
                 pse_seg_loss, pse_seg_pred, pse_seg_loss_aux, pse_seg_pred_aux, pse_seg_mask, pse_cos_feat = \
-                    model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
-                                       self.cfg.train.mask_ratio)
-
+                    self.model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
+                                            self.cfg.train.mask_ratio)
                 loss = (seg_loss + seg_loss_masked) * 0.5 + (seg_loss_aux + seg_loss_aux_masked) * 0.5 * 0.1 + \
                     (cos_feat + cos_feat_masked) * 0.5 * 0.05 + \
                     (pse_seg_loss + 0.1 * pse_seg_loss_aux +
-                     pse_cos_feat * 0.05)
-
+                        pse_cos_feat * 0.05)
                 self.loss_dict = dict(zip(['src_seg_loss', 'src_seg_loss_masked', 'src_seg_loss_aux', 'src_seg_loss_aux_masked', 'src_cos_reg', 'src_cos_reg_masked',
                                            'tgt_pse_seg_loss', 'tgt_pse_seg_loss_aux', 'tgt_cos_reg'],
                                           [seg_loss.item(), seg_loss_masked.item(), seg_loss_aux.item(), seg_loss_aux_masked.item(), cos_feat.item(), cos_feat_masked.item(),
                                            pse_seg_loss.item(), pse_seg_loss_aux.item(), pse_cos_feat.item()]))
-
                 self.tmp_src_seg_loss += seg_loss.item()
                 self.tmp_src_seg_loss_masked += seg_loss_masked.item()
                 self.tmp_src_seg_loss_aux += seg_loss_aux.item()
@@ -342,37 +293,32 @@ class mpl_trainer(nn.Module):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-
                 self.visual_dict = dict(zip(['src_local', 'src_global', 'src_local_label', 'src_global_label',
-                                             'src_local_pred', 'src_local_pred_masked', 'src_global_pred',
+                                            'src_local_pred', 'src_local_pred_masked', 'src_global_pred',
                                              'src_masked_map', 'tgt_local', 'tgt_global', 'tgt_local_pse_label', 'tgt_global_pse_label',
                                              'tgt_local_pred', 'tgt_global_pred',
                                              'tgt_masked_map'],
                                             [img_src.detach(), global_src.detach(), label_src.detach(), label_src_aux.detach(),
-                                             pred_seg.detach(), pred_seg_masked.detach(), pred_aux.detach(),
-                                             mask_seg.detach(), img_tgt.detach(), global_tgt.detach(
-                                             ), pseudo_label_loc.detach(), pseudo_label_global.detach(),
-                                             pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
+                                            pred_seg.detach(), pred_seg_masked.detach(), pred_aux.detach(),
+                                            mask_seg.detach(), img_tgt.detach(), global_tgt.detach(
+                                            ), pseudo_label_loc.detach(), pseudo_label_global.detach(),
+                    pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
             else:
-                pseudo_label_loc_logit, pseudo_label_global_logit = model.get_pseudo_label(
+                pseudo_label_loc_logit, pseudo_label_global_logit = self.model.get_pseudo_label(
                     img_tgt, global_tgt, cord_tgt)
-
-                pseudo_label_loc = model.get_pseudo_label_and_weight(
+                pseudo_label_loc = self.model.get_pseudo_label_and_weight(
                     pseudo_label_loc_logit)
-                pseudo_label_global = model.get_pseudo_label_and_weight(
+                pseudo_label_global = self.model.get_pseudo_label_and_weight(
                     pseudo_label_global_logit)
-
                 del pseudo_label_loc_logit, pseudo_label_global_logit
 
                 # train on pseudo dataset
                 pse_seg_loss1, pse_seg_pred, pse_seg_loss_aux1, pse_seg_pred_aux, pse_seg_mask, pse_cos_feat1 = \
-                    model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
-                                       self.cfg.train.mask_ratio)
-
+                    self.model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
+                                            self.cfg.train.mask_ratio)
                 pse_seg_loss2, _, pse_seg_loss_aux2, _, pse_cos_feat2 = \
-                    model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
-                                       0)
-
+                    self.model.train_pseudo(cord_tgt, img_tgt, pseudo_label_loc.long().cuda(), global_tgt, pseudo_label_global.long().cuda(),
+                                            0)
                 pse_seg_loss = (pse_seg_loss1 + pse_seg_loss2) * 0.5
                 pse_seg_loss_aux = (pse_seg_loss_aux1 +
                                     pse_seg_loss_aux2) * 0.5
@@ -380,10 +326,8 @@ class mpl_trainer(nn.Module):
 
                 loss = (pse_seg_loss + 0.1 * pse_seg_loss_aux +
                         pse_cos_feat * 0.05)
-
                 self.loss_dict = dict(zip(['tgt_pse_seg_loss', 'tgt_pse_seg_loss_aux', 'tgt_cos_reg'],
                                           [pse_seg_loss.item(), pse_seg_loss_aux.item(), pse_cos_feat.item()]))
-
                 self.tmp_src_seg_loss += 0
                 self.tmp_src_seg_loss_masked += 0
                 self.tmp_src_seg_loss_aux += 0
@@ -397,13 +341,12 @@ class mpl_trainer(nn.Module):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-
                 self.visual_dict = dict(zip(['tgt_local', 'tgt_global', 'tgt_local_pse_label', 'tgt_global_pse_label',
                                              'tgt_local_pred', 'tgt_global_pred',
                                              'tgt_masked_map'],
                                             [img_tgt.detach(), global_tgt.detach(
                                             ), pseudo_label_loc.detach(), pseudo_label_global.detach(),
-                                             pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
+                    pse_seg_pred.detach(), pse_seg_pred_aux.detach(), pse_seg_mask.detach()]))
 
     def get_cur_loss(self):
         return self.loss_dict
@@ -417,6 +360,7 @@ class mpl_trainer(nn.Module):
 
     def save_visualization(self, epoch):
         # save nifti first
+
         # save images
         vis = OrderedDict()
         slc_num = self.cfg.data.patch_size[-1]//2
@@ -452,15 +396,9 @@ class mpl_trainer(nn.Module):
     def infer_single_scan(self, tmp_scans):
         pad_flag = False
         self.model.eval()
-
-        # Get actual model (handles DataParallel wrapper)
-        model = self.get_model()
-
         x, y, z = self.cfg.data.patch_size
-
         if self.cfg.data.normalize:
             tmp_scans = util.norm_img(tmp_scans, self.cfg.data.norm_perc)
-
         if min(tmp_scans.shape) < min(x, y, z):
             x_ori_size, y_ori_size, z_ori_size = tmp_scans.shape
             pad_flag = True
@@ -468,16 +406,15 @@ class mpl_trainer(nn.Module):
             y_diff = y-y_ori_size
             z_diff = z-z_ori_size
             tmp_scans = np.pad(tmp_scans, ((max(0, int(x_diff/2)), max(0, x_diff-int(x_diff/2))), (max(0, int(
-                y_diff/2)), max(0, y_diff-int(y_diff/2))), (max(0, int(z_diff/2)), max(0, z_diff-int(z_diff/2)))), constant_values=1e-4)
+                y_diff/2)), max(0, y_diff-int(y_diff/2))), (max(0, int(z_diff/2)), max(0, z_diff-int(z_diff/2)))), constant_values=1e-4)  # cant pad with 0s, otherwise the local and global patches wont be the same location
 
         pred = np.zeros((self.cfg.train.cls_num,) + tmp_scans.shape)
         tmp_norm = np.zeros((self.cfg.train.cls_num,) + tmp_scans.shape)
 
         scan_patches, _, tmp_idx = util.patch_slicer(tmp_scans, tmp_scans, self.cfg.data.patch_size,
-                                                      (x - 16, y -
-                                                       16, z - 16),
-                                                      remove_bg=self.cfg.data.remove_bg, test=True, ori_path=None)
-
+                                                     (x - 16, y -
+                                                      16, z - 16),
+                                                     remove_bg=self.cfg.data.remove_bg, test=True, ori_path=None)
         bound = util.get_bounds(torch.from_numpy(tmp_scans))
         global_scan = torch.unsqueeze(torch.from_numpy(
             tmp_scans).to(dtype=torch.float), dim=0)
@@ -488,8 +425,8 @@ class mpl_trainer(nn.Module):
         for idx, patch in enumerate(scan_patches):
             ipt = torch.from_numpy(patch).to(dtype=torch.float).cuda()
             ipt = ipt.reshape((1, 1,) + ipt.shape)
-            patch_idx = tmp_idx[idx]
 
+            patch_idx = tmp_idx[idx]
             location = torch.zeros_like(
                 torch.from_numpy(tmp_scans)).float()
             location = torch.unsqueeze(location, 0)
@@ -498,13 +435,11 @@ class mpl_trainer(nn.Module):
             sbj = tio.Subject(one_image=tio.ScalarImage(
                 tensor=global_scan[:, bound[0]:bound[1], bound[2]:bound[3], bound[4]:bound[5]]),
                 a_segmentation=tio.LabelMap(
-                tensor=location[:, bound[0]:bound[1], bound[2]:bound[3], bound[4]:bound[5]]))
-
+                    tensor=location[:, bound[0]:bound[1], bound[2]:bound[3], bound[4]:bound[5]]))
             transforms = tio.transforms.Resize(target_shape=(x, y, z))
             sbj = transforms(sbj)
             down_scan = sbj['one_image'].data
             loc = sbj['a_segmentation'].data
-
             tmp_coor = util.get_bounds(loc)
             coordinates_A = np.array([np.floor(tmp_coor[0] / 4),
                                       np.ceil(tmp_coor[1] / 4),
@@ -515,40 +450,34 @@ class mpl_trainer(nn.Module):
                                       ]).astype(int)
             coordinates_A = torch.unsqueeze(
                 torch.from_numpy(coordinates_A), 0)
-
-            tmp_pred, _ = model(ipt, down_scan.cuda().reshape([1, 1, x, y, z]),
-                                coordinates_A)
+            tmp_pred, _ = self.model(ipt, down_scan.cuda().reshape([1, 1, x, y, z]),
+                                     coordinates_A)
 
             patch_idx = (slice(0, self.cfg.train.cls_num),) + (
                 slice(patch_idx[0], patch_idx[1]), slice(
                     patch_idx[2], patch_idx[3]),
                 slice(patch_idx[4], patch_idx[5]))
-
             pred[patch_idx] += torch.squeeze(
                 tmp_pred).detach().cpu().numpy()
             tmp_norm[patch_idx] += 1
 
         pred[tmp_norm > 0] = (pred[tmp_norm > 0]) / \
             tmp_norm[tmp_norm > 0]
-
         sf = torch.nn.Softmax(dim=0)
         pred_vol = sf(torch.from_numpy(pred)).numpy()
         pred_vol = np.argmax(pred_vol, axis=0)
-
         if pad_flag:
             pred_vol = pred_vol[max(0, int(x_diff/2)): max(0, int(x_diff/2))+x_ori_size,
                                 max(0, int(y_diff/2)): max(0, int(y_diff/2))+y_ori_size,
                                 max(0, int(z_diff/2)): max(0, int(z_diff/2))+z_ori_size]
             assert pred_vol.shape == (
                 x_ori_size, y_ori_size, z_ori_size), 'pred_vol shape must be the same as the original scan shape'
-
         return pred_vol
 
     def validation(self, epoch):
         if not self.cfg.train.test_time:
             val_lst = [tmp_file for tmp_file in os.listdir(
                 self.cfg.data.val_img) if tmp_file.endswith(self.cfg.data.extension)]
-
             try:
                 nib.load(os.path.join(self.cfg.data.val_img, val_lst[0]))
             except ValueError:
@@ -560,7 +489,6 @@ class mpl_trainer(nn.Module):
                     self.cfg.data.val_img, val_file))
                 val_label = nib.load(os.path.join(
                     self.cfg.data.val_label, val_file))
-
                 tar_orientation = ('R', 'A', 'S')
                 if nib.aff2axcodes(val_scan.affine) == tar_orientation:
                     tmp_scans = val_scan.get_fdata()
@@ -576,11 +504,9 @@ class mpl_trainer(nn.Module):
                 tmp_scans[tmp_scans < 0] = 0
 
                 tmp_pred = self.infer_single_scan(tmp_scans)
-
                 ind_dsc = []
                 for cls_idx in range(1, self.cfg.train.cls_num):
                     ind_dsc.append(util.cal_dice(tmp_pred, tmp_label, cls_idx))
-
                 cur_dsc += np.mean(ind_dsc)
 
                 # save the prediciton and GT
@@ -595,11 +521,12 @@ class mpl_trainer(nn.Module):
 
             cur_dsc /= len(val_lst)
             self.val_dice.append(cur_dsc)
+
             tmp_val_score = cur_dsc * 1 - self.tgt_pse_seg_loss[-1]*0.5
+
         else:
             self.val_dice.append(0)
             tmp_val_score = - self.tgt_pse_seg_loss[-1]
-
         if len(self.val_score) == 0:
             self.val_score.append(tmp_val_score)
             self.cumulative_no_improve.append(0)
