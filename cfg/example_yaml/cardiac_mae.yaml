@@ -16,6 +16,6 @@ train:
 
 data: 
   mae_root: '/kaggle/working/mmwh-heart/mae_data'
-  extension: '.nii'
+  extension: '.nii.gz'
   patch_size: [112, 112, 112]
 
