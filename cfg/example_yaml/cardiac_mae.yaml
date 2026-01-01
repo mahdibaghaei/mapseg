@@ -11,11 +11,11 @@ train:
   niter: 200
   niter_decay: 100
   type: 'mae'
-  batch_size : 8
+  batch_size : 4
   save_epoch_freq : 5
 
 data: 
   mae_root: '/kaggle/working/mmwh-heart/mae_data'
   extension: '.nii.gz'
-  patch_size: [112, 112, 112]
+  patch_size: [48, 48, 48]
 
