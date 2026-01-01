@@ -12,7 +12,6 @@ train:
   niter_decay: 100
   type: 'mae'
   batch_size : 8
-  print_freg : 20
   save_epoch_freq : 5
 
 data: 
